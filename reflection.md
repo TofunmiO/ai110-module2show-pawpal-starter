@@ -5,19 +5,41 @@
 **a. Initial design**
 
 - Briefly describe your initial UML design.
-an app that helps a pet owner plan care tasks for their pet. 
+    - An app that helps a pet owner plan care tasks for their pet. 
 
 - What classes did you include, and what responsibilities did you assign to each?
-Pet class- pdaily needs,(attr) owner info(attr), eat (mthd), walk (mthd)
-Owner class - pet info, add a pet(mthd), schedule a walk(mthd), see today's tasks(mthd).
-Task Class - walks, feeding, meds, enrichment, grooming, print daily task (mthd), duration, prioirty
-Daily plan/Schedule task class - generate daily schedule
+    - Owner class: 
+        - Attributes: name, time_available, preferences, list of pet
+        - Methods: add a pet(pet), all_tasks()
+    - Pet class:
+        - Attributes: name, list of Task
+        - Methods: add a task(task)
+    -Task Class:
+        - Attributes: name, duration, priority
+        - Methods: fits_in(remaining_minutes)
+    - Scheduler class: 
+        - Attributes: owner
+        - Methods: sort_task(), generate_daily_plan(), explain() 
 
 
 **b. Design changes**
 
 - Did your design change during implementation?
 - If yes, describe at least one change and why you made it.
+
+    - Added pet as an attribute to Task class. 
+    Why: Each task now links to its pet, so the plan can show which pet a task is for.
+
+    - In Task class: Changed priority attribute from a word to a number (1 = high) 
+    Why: so tasks sort by importance, not alphabetically.
+
+    - Task class: added is_required attribute as a boolean.
+    Why: so mandatory tasks like meds are never skipped when time runs out.
+
+    - Task class: added frequency (daily/weekly) attribution and completed (done for the day) attributes, plus a mark_done() method, to track what still needs scheduling.
+
+    - Scheduler class: Instead of generate_daily_plan() method returning a plain list[Task], Scheduler now holds three attributes it fills in — the scheduled tasks with times (entries), the cut tasks (skipped), and the reasoning.
+    - Why (the Scheduler change): A plain list forgets the times and what was dropped, but explain() method needs both. Storing them on Scheduler lets explain() method read the decisions instead of re-computing the schedule. The Scheduler also reads tasks only through Owner.all_tasks(), so it never depends on how an Owner stores its pets.
 
 ---
 
