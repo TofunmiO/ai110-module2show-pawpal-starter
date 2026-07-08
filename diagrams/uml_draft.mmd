@@ -1,0 +1,33 @@
+classDiagram
+    class Owner {
+        +String name
+        +int time_available
+        +List preferences
+        +List~Pet~ pets
+        +add_pet(pet)
+        +all_tasks()
+    }
+
+    class Pet {
+        +String name
+        +List~Task~ tasks
+        +add_task(task)
+    }
+
+    class Task {
+        +String name
+        +int duration
+        +String priority
+        +fits_in(remaining_minutes)
+    }
+
+    class DailyPlan {
+        +Owner owner
+        +sort_tasks()
+        +generate_daily_plan()
+        +explain()
+    }
+
+    Owner "1" --> "0..*" Pet : owns
+    Pet "1" --> "0..*" Task : contains
+    DailyPlan --> Owner : plans for
