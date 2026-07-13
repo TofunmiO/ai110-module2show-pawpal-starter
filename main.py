@@ -5,6 +5,8 @@ purpose), then exercises the new sorting and filtering methods before
 generating a daily plan. Run with:  python3 main.py
 """
 
+from datetime import date, timedelta
+
 from pawpal_system import Owner, Pet, Task, Scheduler
 
 
@@ -23,6 +25,11 @@ def build_owner() -> Owner:
     biscuit.add_task(Task("Morning walk", duration=30, priority=1, preferred_time="08:15"))
     biscuit.add_task(
         Task("Insulin shot", duration=5, priority=1, is_required=True, preferred_time="08:00")
+    )
+    # A low-priority task that slipped two days past due — used to show how
+    # weighted prioritization (prioritize_by_urgency) escalates overdue tasks.
+    biscuit.add_task(
+        Task("Nail trim", duration=15, priority=3, due_date=date.today() - timedelta(days=2))
     )
 
     # --- Pet 2: a cat ---
@@ -59,6 +66,11 @@ def main() -> None:
     # --- Sorting: tasks were added out of order; sort_by_time() fixes that ---
     print_tasks("Tasks in the order they were added:", owner.all_tasks())
     print_tasks("Tasks sorted by time (sort_by_time):", scheduler.sort_by_time())
+
+    # --- Weighted prioritization: one urgency score blends every factor, so an
+    # overdue low-priority task can outrank a fresh high-priority one ---
+    print(scheduler.urgency_report())
+    print()
 
     # --- Filtering: by pet, then by completion status ---
     print_tasks("Filtered to Biscuit's tasks (filter_tasks):", owner.filter_tasks(pet_name="Biscuit"))

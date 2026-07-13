@@ -136,7 +136,7 @@ else:
         with scol:
             # Pick which Scheduler sorter drives the table.
             sort_mode = st.radio(
-                "Sort by", ["time", "priority"], horizontal=True, key="task_sort_mode"
+                "Sort by", ["time", "priority", "urgency"], horizontal=True, key="task_sort_mode"
             )
 
         scheduler = Scheduler(owner)
@@ -147,6 +147,10 @@ else:
         if sort_mode == "time":
             # sort_by_time: fixed times first, flexible/timeless tasks last.
             ordered_tasks = scheduler.sort_by_time(filtered)
+        elif sort_mode == "urgency":
+            # prioritize_by_urgency: weighted score blending required status,
+            # priority, overdue days, and brevity into one ranking.
+            ordered_tasks = scheduler.prioritize_by_urgency(filtered)
         else:
             # sort_tasks: required -> priority -> duration; intersect with the
             # filtered set to keep the status/pet narrowing.
@@ -161,6 +165,7 @@ else:
                         "time": t.preferred_time or "flexible",
                         "duration_minutes": t.duration,
                         "priority": t.priority,
+                        "urgency": round(t.urgency_score(), 1),
                         "status": "done" if t.completed else "pending",
                     }
                     for t in ordered_tasks

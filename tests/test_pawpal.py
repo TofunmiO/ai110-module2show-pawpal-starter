@@ -38,6 +38,68 @@ def test_sort_by_time_orders_by_clock_and_puts_flexible_last():
     assert names == ["Morning", "Evening", "Flexible"]
 
 
+# --- Weighted prioritization (urgency scoring) -----------------------------
+
+def test_urgency_score_ranks_required_above_optional():
+    """A required task always out-scores any optional one, regardless of priority."""
+    required_low = Task("Meds", 5, priority=3, is_required=True)
+    optional_high = Task("Walk", 5, priority=1)  # highest optional priority
+    assert required_low.urgency_score() > optional_high.urgency_score()
+
+
+def test_urgency_score_is_zero_for_completed_task():
+    """A completed task has nothing left to do, so it scores 0."""
+    task = Task("Walk", 30, priority=1, is_required=True)
+    task.completed = True
+    assert task.urgency_score() == 0.0
+
+
+def test_overdue_task_can_outrank_a_fresher_higher_priority_task():
+    """Enough overdue days let a lower-priority task overtake a fresh higher one.
+
+    This is the behavior a fixed lexicographic sort *cannot* express: here a
+    priority-2 task that's a week overdue beats a brand-new priority-1 task.
+    """
+    today = date(2026, 7, 13)
+    overdue_medium = Task(
+        "Overdue brush", 20, priority=2, due_date=today - timedelta(days=7)
+    )
+    fresh_high = Task("Fresh walk", 20, priority=1, due_date=today)
+
+    assert overdue_medium.urgency_score(today) > fresh_high.urgency_score(today)
+
+
+def test_prioritize_by_urgency_orders_most_urgent_first():
+    """Scheduler.prioritize_by_urgency ranks required, then overdue, then priority."""
+    today = date(2026, 7, 13)
+    owner = Owner("T", time_available=300)
+    pet = Pet("Rex", "dog")
+    pet.add_task(Task("Meds", 5, priority=2, is_required=True))          # required -> top
+    pet.add_task(Task("Overdue walk", 20, priority=2,
+                      due_date=today - timedelta(days=3)))              # overdue -> next
+    pet.add_task(Task("Fresh play", 20, priority=1, due_date=today))    # fresh high priority
+    pet.add_task(Task("Someday groom", 40, priority=3))                 # low, no date -> last
+    owner.add_pet(pet)
+
+    names = [t.name for t in Scheduler(owner).prioritize_by_urgency(today=today)]
+    assert names == ["Meds", "Overdue walk", "Fresh play", "Someday groom"]
+
+
+def test_urgency_report_flags_overdue_and_hints_when_empty():
+    """urgency_report tags overdue tasks and gives a hint when nothing is pending."""
+    today = date(2026, 7, 13)
+    owner = Owner("T", time_available=300)
+    assert "No pending tasks" in Scheduler(owner).urgency_report(today=today)
+
+    pet = Pet("Rex", "dog")
+    pet.add_task(Task("Overdue walk", 20, due_date=today - timedelta(days=2)))
+    owner.add_pet(pet)
+
+    report = Scheduler(owner).urgency_report(today=today)
+    assert "Overdue walk" in report
+    assert "overdue 2d" in report
+
+
 # --- Filtering by pet / status --------------------------------------------
 
 def test_filter_tasks_by_pet_and_status():

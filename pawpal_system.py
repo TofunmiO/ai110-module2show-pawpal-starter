@@ -11,6 +11,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field, replace
 from datetime import date, timedelta
+from typing import ClassVar
 
 
 @dataclass
@@ -27,9 +28,53 @@ class Task:
     completed: bool = False  # marked done for the day
     pet: Pet | None = None  # the pet this task belongs to (set by Pet.add_task)
 
+    # Weights for urgency_score(). Declared ClassVar so the dataclass treats
+    # them as shared constants, not per-instance fields. Tuned so a required
+    # task (100) always outranks any optional one (priority contributes at
+    # most 30), while overdue days and brevity provide finer, escalating nudges
+    # between tasks of the same class.
+    REQUIRED_WEIGHT: ClassVar[float] = 100.0
+    PRIORITY_WEIGHT: ClassVar[float] = 10.0  # x (4 - priority): high=30, med=20, low=10
+    OVERDUE_WEIGHT: ClassVar[float] = 15.0   # per day a task is past its due_date
+    QUICK_WIN_WEIGHT: ClassVar[float] = 5.0  # max bonus for a near-instant task
+    QUICK_WIN_CUTOFF: ClassVar[int] = 60     # minutes; only tasks <= this earn it
+
     def fits_in(self, remaining_minutes: int) -> bool:
         """Return True if this task can fit in the remaining time budget."""
         return self.duration <= remaining_minutes
+
+    def urgency_score(self, today: date | None = None) -> float:
+        """Blend required status, priority, overdue days, and brevity into one score.
+
+        This is the scoring model behind Scheduler.prioritize_by_urgency(), and
+        it is deliberately different from sort_tasks()'s strict lexicographic
+        ordering (required, then priority, then duration). Because every factor
+        is folded into a single number, a badly overdue medium-priority task can
+        out-rank a fresh high-priority one — something a fixed key order can
+        never express. Higher means more urgent; a completed task scores 0.0
+        (there's nothing left to do). `today` is injectable so tests (and the
+        recurrence clock) don't have to depend on the real calendar date.
+        """
+        if self.completed:
+            return 0.0
+        today = today or date.today()
+
+        score = 0.0
+        if self.is_required:
+            score += self.REQUIRED_WEIGHT
+        # priority 1 (high) contributes most, 3 (low) least.
+        score += (4 - self.priority) * self.PRIORITY_WEIGHT
+        # Overdue tasks escalate linearly the longer they've slipped past due.
+        if self.due_date is not None and self.due_date < today:
+            overdue_days = (today - self.due_date).days
+            score += overdue_days * self.OVERDUE_WEIGHT
+        # A small nudge for quick wins so short tasks edge ahead of equal-ranked
+        # long ones; scaled so a 0-min task gets the full bonus and a task at the
+        # cutoff gets none.
+        if self.duration <= self.QUICK_WIN_CUTOFF:
+            fraction = (self.QUICK_WIN_CUTOFF - self.duration) / self.QUICK_WIN_CUTOFF
+            score += fraction * self.QUICK_WIN_WEIGHT
+        return score
 
     def mark_complete(self) -> Task | None:
         """Mark this task done. If it recurs, create and attach the next occurrence.
@@ -159,6 +204,56 @@ class Scheduler:
         if tasks is None:
             tasks = self.owner.all_tasks()
         return sorted(tasks, key=lambda t: t.preferred_time or "99:99")
+
+    def prioritize_by_urgency(
+        self, tasks: list[Task] | None = None, today: date | None = None
+    ) -> list[Task]:
+        """Order tasks by weighted urgency score, most urgent first.
+
+        A third scheduling algorithm alongside sort_tasks() (lexicographic
+        required/priority/duration) and sort_by_time() (clock order). Where
+        sort_tasks() applies a fixed hierarchy of keys, this scores each task
+        with Task.urgency_score() — which also factors in how many days a task
+        is *overdue*, something neither other sorter considers — and sorts
+        descending. Ties fall back to sort_tasks()'s key so the order stays
+        stable and predictable. `today` is passed through to the score so
+        callers can plan against a fixed date rather than the real clock.
+        """
+        if tasks is None:
+            tasks = self.owner.all_tasks()
+        return sorted(
+            tasks,
+            key=lambda t: (
+                -t.urgency_score(today),  # highest score first
+                not t.is_required,        # required before optional
+                t.priority,               # then high priority
+                t.duration,               # then shortest
+            ),
+        )
+
+    def urgency_report(self, tasks: list[Task] | None = None, today: date | None = None) -> str:
+        """Human-readable ranking of tasks by urgency score, most urgent first.
+
+        Renders prioritize_by_urgency() as text (score in brackets, plus an
+        "overdue Nd" tag when a task is past due) so the CLI and UI can show
+        *why* the order came out the way it did, mirroring how explain() surfaces
+        the daily plan. Returns a hint string when there's nothing to rank.
+        """
+        ranked = [t for t in self.prioritize_by_urgency(tasks, today) if not t.completed]
+        if not ranked:
+            return "No pending tasks to prioritize."
+        anchor = today or date.today()
+        lines = ["Tasks by urgency (highest first):"]
+        for task in ranked:
+            who = task.pet.name if task.pet else "?"
+            overdue = ""
+            if task.due_date is not None and task.due_date < anchor:
+                overdue = f", overdue {(anchor - task.due_date).days}d"
+            lines.append(
+                f"  [{task.urgency_score(today):5.1f}] {task.name} for {who} "
+                f"({task.duration} min, priority {task.priority}{overdue})"
+            )
+        return "\n".join(lines)
 
     def detect_conflicts(self, tasks: list[Task] | None = None) -> list[tuple[Task, Task]]:
         """Find pairs of tasks set to overlapping time slots.

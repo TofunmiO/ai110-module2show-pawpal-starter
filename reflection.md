@@ -78,11 +78,11 @@ A crash is the worst outcome for this user. A busy owner opens the app in the mo
 
 - Describe one moment where you did not accept an AI suggestion as-is.
 
-    - In `app.py`, the AI wanted the "Add task" button to build a real `Task` object and attach it with `pet.add_task(...)`, instead of saving tasks as plain dictionaries in a temporary list. Before accepting, I stopped and asked whether tasks would still persist as I clicked around, or whether the `Owner` now handled that. The answer: they persist, because the pet lives on the `Owner`, which is stored in `st.session_state` (Streamlit's memory that survives re-runs). Only once I understood that did I accept the edit.
+    - In app.py, the AI wanted the "Add task" button to build a real Task object and attach it with pet.add_task(...), instead of saving tasks as plain dictionaries in a temporary list. Before accepting, I stopped and asked whether tasks would still persist as I clicked around, or whether the Owner now handled that. The answer: they persist, because the pet lives on the Owner, which is stored in st.session_state. Only once I understood that did I accept the edit.
 
 - How did you evaluate or verify what the AI suggested?
 
-    - I ran the app and tested it from the UI: added tasks, clicked around, and confirmed they stayed on screen instead of disappearing. I also had the AI explain *why* it worked (the owner-in-session_state chain) rather than trusting the code blindly, and cross-checked that the change removed a duplicate copy of the data instead of adding one.
+    - I ran the app and tested it from the UI: added tasks, clicked around, and confirmed they stayed on screen instead of disappearing. I also had the AI explain why it worked (the owner-in-session_state chain) rather than trusting the code blindly, and cross-checked that the change removed a duplicate copy of the data instead of adding one.
 
 ---
 
@@ -90,13 +90,22 @@ A crash is the worst outcome for this user. A busy owner opens the app in the mo
 
 **a. What you tested**
 
-- What behaviors did you test? UI and if logic implemented showed on the UI front
-- Why were these tests important? It showed a lot of new logic impleented were not showing on the UI and the user would not have had access to thiis which annuls the point of the improvements made tot he app.
+- What behaviors did you test? 
+    -  UI testing and the UI wiring
+     -  Recurrence did not come through on the actual app and explain() did not highlight completed plans and showed daily plan as empty when all tasks have been completed.
+- Why were these tests important? 
+    - The automated tests passed, but manually testing the app revealed that several newly implemented features (preferred_time, frequency, conflict warnings) weren't surfaced in the UI — so a real user couldn't access them. That made the manual test essential: unit tests prove the logic is correct in isolation, but only using the actual app showed the logic wasn't connected to the front end, leaving the improvements useless to the user until wired in.
 
 **b. Confidence**
 
-- How confident are you that your scheduler works correctly? 4/5
+- How confident are you that your scheduler works correctly? 
+    - 4/5
 - What edge cases would you test next if you had more time?
+    - Resolve and test the future-dated conflict: making detect_conflicts filter on due_date too.
+    - Overdue / past-due tasks. 
+    - Out-of-range / odd times in the plan path.
+    - Three-or-more overlapping tasks. 
+    - Frozen-clock recurrence: test month/year/leap-day rollovers without relying on the real date.
 
 ---
 
@@ -104,15 +113,29 @@ A crash is the worst outcome for this user. A busy owner opens the app in the mo
 
 **a. What went well**
 
-- What part of this project are you most satisfied with? The completion and seeing all the ideas come to live and be functional
+- What part of this project are you most satisfied with? 
+    - Honestly, just seeing it all come together and actually work. The ideas I sketched out in the UML turned into real code that does what it's supposed to — the scheduler sorts tasks, catches time conflicts, and handles recurring ones, and the Streamlit app pulls it all together. Watching a full plan get generated and explained made it click that everything I built is functional and actually runs.
 
 **b. What you would improve**
 
 - If you had another iteration, what would you improve or redesign?
+    - First, I'd fix the conflict check — right now it can flag a task that's due tomorrow as clashing with today's, which isn't right since that task isn't even in today's plan. 
+   - Second, I'd add proper input validation, since the time parser will happily accept something like "25:00" without complaining. The scheduler also leans on the real current date for recurring tasks, so I'd make that easier to control instead of tying it to the actual day. 
+  -  Finally, I'd add tests for the app itself, not just the scheduler logic.
+   
 
 **c. Key takeaway**
 
 - What is one important thing you learned about designing systems or working with AI on this project?
-Sometimes they over do and make it unecessarily complicaated  and verbose which can increase noise and take focus from the core functionalities.
-AI says it implenented soenthing and i check myself especially on the UI front and it does not show and when i peobe AI, it is because it is buried under a condition AI set which shows AI didn't consider some cases where it prevents the code from doing sonehting useful in the case of an edge case.
-Discovered AI said it was done implementing and it actually skipped some parts. Testing and verification iis iso important
+    - The biggest thing is that you can't just take AI's word for it — you have to verify. A few times it told me something was implemented, but when I checked myself, especially on the UI side, it wasn't actually showing up. When I probed, it turned out the behavior was buried under a condition the AI had set, which meant it hadn't really thought through the edge cases — cases where its own logic quietly stopped the code from doing something useful. I also caught it saying it was "done" when it had actually skipped parts. On top of that, AI tends to overdo things and make them more complicated and verbose than they need to be, which adds noise and pulls focus away from the core functionality. So the real lesson is that testing and verification matter just as much as the building.
+
+
+**c. AI strategy**
+- Which AI coding assistant features were most effective for building your scheduler?
+    - Claude: mainly that it could read my actual code, edit the files directly, and run my tests and the app to check things worked instead of just guessing
+- Give one example of an AI suggestion you rejected or modified to keep your system design clean.
+    - When I asked the AI to implement the four scheduling features, its first move was to rewrite the entire pawpal_system.py in one edit — all four features plus new fields and a reworked generate_daily_plan() at once. I rejected that and had it add one feature at a time, starting with just sort_by_time(). Working incrementally kept each method small and single-purpose, let me review and test each piece before the next, and avoided a large tangled change I couldn't verify. It also meant we dropped the AI's original weekday-based recurrence idea (is_due(weekday)) in favor of a simpler due_date approach that emerged once we built recurrence on its own.
+- How did using separate chat sessions for different phases help you stay organized?
+    - Splitting each phase into its own chat kept the AI's context focused. It was also easier to go back and ask the AI when something broke, phase targeted questions becuase the conversations were separate.
+- Summarize what you learned about being the "lead architect" when collaborating with powerful AI tools.
+    - Being the lead architect meant the AI was fast and capable, but the judgment stayed mine. I had to interrogate and verify answers as well as set the pace, direction, and structure.
