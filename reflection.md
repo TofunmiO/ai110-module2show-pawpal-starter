@@ -12,7 +12,7 @@
         - Attributes: name, time_available, preferences, list of pet
         - Methods: add a pet(pet), all_tasks()
     - Pet class:
-        - Attributes: name, list of Task
+        - Attributes: name, animal_type, list of Task
         - Methods: add a task(task)
     -Task Class:
         - Attributes: name, duration, priority
@@ -53,9 +53,12 @@
 **b. Tradeoffs**
 
 - Describe one tradeoff your scheduler makes.
-- Why is that tradeoff reasonable for this scenario?
 
----
+    - Tradeoff: detect_conflicts() silently drops any task whose preferred_time is missing or malformed or not put in the format HH:MM
+
+- Why is that tradeoff reasonable for this scenario?
+A crash is the worst outcome for this user. A busy owner opens the app in the morning to see their plan. If one typo'd time string ("8am") crashed the whole scheduler, they'd get nothing — no plan, no meds reminder, no conflict warnings for any pet. The app's job is to stay useful and never blow up in someone's face; a rare, recoverable missed check is an acceptable price for that reliability.
+
 
 ## 3. AI Collaboration
 

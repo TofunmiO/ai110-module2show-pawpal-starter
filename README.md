@@ -80,14 +80,19 @@ Sample test output:
 
 ## 📐 Smarter Scheduling
 
-> Fill in once you've implemented scheduling logic.
+Beyond the basic priority sort, PawPal+ implements four "smarter" scheduling
+behaviors, all in `pawpal_system.py`:
 
 | Feature | Method(s) | Notes |
 |---------|-----------|-------|
-| Task sorting | | e.g., by priority, duration |
-| Filtering | | e.g., skip tasks if time runs out |
-| Conflict handling | | e.g., overlapping time slots |
-| Recurring tasks | | e.g., daily vs. weekly |
+| Sorting by time | `Scheduler.sort_by_time()` | Orders tasks by `preferred_time`; flexible (timeless) tasks sort last |
+| Filtering | `Owner.filter_tasks()` | By pet name and/or completion status (each filter optional) |
+| Conflict detection | `Scheduler.detect_conflicts()`, `Scheduler.conflict_warning()` | Flags overlapping time slots (same or different pets); returns a crash-proof warning string |
+| Recurring tasks | `Task.mark_complete()`, `Task.next_occurrence()` | Completing a daily/weekly task auto-spawns its next occurrence |
+
+> Conflict-detection tradeoff: an unparseable time (e.g. `"8am"`) is silently
+> skipped rather than crashing the check, so a conflict involving that task can
+> go undetected.
 
 ## 📸 Demo Walkthrough
 
