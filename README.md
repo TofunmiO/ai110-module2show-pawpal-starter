@@ -66,17 +66,31 @@ Scheduled 5 task(s) from a 90 min budget (required tasks first, then by priority
 
 ```bash
 # Run the full test suite:
-pytest
-
-# Run with coverage:
-pytest --cov
+python -m pytest
 ```
 
-Sample test output:
+```
+(.venv) tofunmio@Oluwatofunmis-MacBook-Air ai110-module2show-pawpal-starter % python -m pytest
+======================== test session starts =========================
+platform darwin -- Python 3.14.5, pytest-9.1.1, pluggy-1.6.0
+rootdir: /Users/tofunmio/Documents/codepath-ai110/pawpal/ai110-module2show-pawpal-starter
+plugins: anyio-4.14.1
+collected 24 items                                                   
 
+tests/test_pawpal.py ........................                  [100%]
+
+========================= 24 passed in 0.01s =========================
+(.venv) tofunmio@Oluwatofunmis-MacBook-Air ai110-module2show-pawpal-starter % 
 ```
-# Paste your pytest output here
-```
+
+The tests in `tests/test_pawpal.py` cover the core scheduling behaviors:
+
+- **Sorting** — tasks come back in the right order (by clock time, and by required → priority → duration).
+- **Recurrence** — completing a daily/weekly task spawns its next occurrence (tomorrow / +7 days), one-off tasks don't recur, and re-completing spawns no duplicates.
+- **Filtering** — `Owner.filter_tasks()` narrows by pet name and/or completion status, and the two filters compose.
+- **Conflict detection** — overlapping time slots are flagged (including duplicate times), while touching slots and malformed times are handled without crashing.
+- **Daily plan** — fixed times are anchored and flexible tasks fill the gaps, the budget is respected (required tasks placed even when over budget, optional ones skipped), and completed/future-dated tasks are left out.
+- **Edge cases** — empty owners/pets and zero-minute budgets.
 
 ## 📐 Smarter Scheduling
 
@@ -90,9 +104,6 @@ behaviors, all in `pawpal_system.py`:
 | Conflict detection | `Scheduler.detect_conflicts()`, `Scheduler.conflict_warning()` | Flags overlapping time slots (same or different pets); returns a crash-proof warning string |
 | Recurring tasks | `Task.mark_complete()`, `Task.next_occurrence()` | Completing a daily/weekly task auto-spawns its next occurrence |
 
-> Conflict-detection tradeoff: an unparseable time (e.g. `"8am"`) is silently
-> skipped rather than crashing the check, so a conflict involving that task can
-> go undetected.
 
 ## 📸 Demo Walkthrough
 

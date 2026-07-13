@@ -205,3 +205,152 @@ def test_plan_skips_completed_and_future_recurring_occurrences():
 
     # Neither the finished Walk nor its future occurrence should be scheduled.
     assert scheduler.entries == []
+
+
+# ===========================================================================
+# Additional coverage: priority sort, chronological output, budget rules,
+# boundaries, empty inputs, and the future-dated conflict inconsistency.
+# ===========================================================================
+
+# --- Sorting correctness: the priority sort used by the planner -----------
+
+def test_sort_tasks_orders_required_then_priority_then_duration():
+    """sort_tasks() ranks required-first, then lower priority number, then shorter.
+
+    Exercises all three tiebreakers at once:
+      - Meds is required -> must come first despite low (priority 3) priority.
+      - Among the rest, priority 1 beats priority 2.
+      - Between two priority-2 tasks, the shorter duration wins.
+    """
+    owner = Owner("T", time_available=300)
+    pet = Pet("Rex", "dog")
+    pet.add_task(Task("Meds", 5, priority=3, is_required=True))
+    pet.add_task(Task("Vet", 30, priority=1))
+    pet.add_task(Task("LongWalk", 40, priority=2))
+    pet.add_task(Task("ShortWalk", 10, priority=2))
+    owner.add_pet(pet)
+
+    names = [t.name for t in Scheduler(owner).sort_tasks()]
+    assert names == ["Meds", "Vet", "ShortWalk", "LongWalk"]
+
+
+def test_plan_entries_are_returned_in_chronological_order():
+    """generate_daily_plan() leaves self.entries sorted by clock time."""
+    owner = Owner("T", time_available=300)
+    pet = Pet("Rex", "dog")
+    # Added out of order on purpose.
+    pet.add_task(Task("Evening", 20, preferred_time="18:00"))
+    pet.add_task(Task("Noon", 20, preferred_time="12:00"))
+    pet.add_task(Task("Morning", 20, preferred_time="08:00"))
+    owner.add_pet(pet)
+
+    scheduler = Scheduler(owner, start_hour=8)
+    scheduler.generate_daily_plan()
+
+    starts = [start for start, _pet, _task in scheduler.entries]
+    assert starts == sorted(starts)
+    assert starts == ["08:00", "12:00", "18:00"]
+
+
+# --- Time-budget rules ------------------------------------------------------
+
+def test_required_task_is_placed_even_when_over_budget():
+    """A required task is scheduled even when it exceeds the remaining budget."""
+    owner = Owner("T", time_available=10)
+    pet = Pet("Rex", "dog")
+    pet.add_task(Task("Meds", 30, is_required=True))  # 30 min into a 10 min budget
+    owner.add_pet(pet)
+
+    scheduler = Scheduler(owner)
+    scheduler.generate_daily_plan()
+
+    placed = [task.name for _start, _pet, task in scheduler.entries]
+    assert "Meds" in placed
+    assert scheduler.skipped == []
+    assert "over budget" in scheduler.reasoning.lower()
+
+
+def test_non_required_task_is_skipped_when_it_does_not_fit():
+    """A non-required task that exceeds the budget lands in skipped, not entries."""
+    owner = Owner("T", time_available=10)
+    pet = Pet("Rex", "dog")
+    pet.add_task(Task("LongWalk", 30))  # not required, doesn't fit
+    owner.add_pet(pet)
+
+    scheduler = Scheduler(owner)
+    scheduler.generate_daily_plan()
+
+    assert scheduler.entries == []
+    assert [t.name for t in scheduler.skipped] == ["LongWalk"]
+
+
+def test_fits_in_is_inclusive_at_the_exact_boundary():
+    """A task whose duration exactly equals the budget still fits (<= boundary)."""
+    task = Task("Walk", 30)
+    assert task.fits_in(30) is True   # exactly equal -> fits
+    assert task.fits_in(29) is False  # one minute short -> does not fit
+
+
+def test_zero_budget_skips_flexible_but_keeps_required():
+    """With no time available, optional tasks are dropped but required ones stay."""
+    owner = Owner("T", time_available=0)
+    pet = Pet("Rex", "dog")
+    pet.add_task(Task("Meds", 5, is_required=True))
+    pet.add_task(Task("Walk", 20))  # optional
+    owner.add_pet(pet)
+
+    scheduler = Scheduler(owner)
+    scheduler.generate_daily_plan()
+
+    placed = [task.name for _start, _pet, task in scheduler.entries]
+    assert placed == ["Meds"]
+    assert [t.name for t in scheduler.skipped] == ["Walk"]
+
+
+# --- Empty / boundary inputs ------------------------------------------------
+
+def test_owner_with_no_pets_produces_empty_plan_and_explain_hint():
+    """No pets -> no tasks -> empty plan, and explain() nudges to generate first."""
+    owner = Owner("T", time_available=120)
+    scheduler = Scheduler(owner)
+
+    # explain() before any plan tells the caller to generate one.
+    assert "generate_daily_plan" in scheduler.explain()
+
+    scheduler.generate_daily_plan()
+    assert scheduler.entries == []
+    assert scheduler.skipped == []
+
+
+def test_pet_with_no_tasks_contributes_nothing():
+    """A pet with an empty task list doesn't add anything to all_tasks()."""
+    owner = Owner("T", time_available=120)
+    owner.add_pet(Pet("Ghost", "cat"))  # no tasks
+    assert owner.all_tasks() == []
+
+
+# --- Known inconsistency: future-dated tasks and conflict detection --------
+
+def test_future_dated_task_excluded_from_plan_but_still_flagged_as_conflict():
+    """Documents current behavior: detect_conflicts ignores due_date, plan honors it.
+
+    A task due tomorrow is correctly left out of today's plan, yet
+    detect_conflicts() (which filters only on `completed`, not `due_date`)
+    still pairs it with a same-slot task. If the intended behavior is that
+    future tasks never conflict today, this test should flip to assert 0.
+    """
+    owner = Owner("T", time_available=300)
+    pet = Pet("Rex", "dog")
+    pet.add_task(Task("Today", 30, preferred_time="08:00"))
+    pet.add_task(
+        Task("Tomorrow", 30, preferred_time="08:00",
+             due_date=date.today() + timedelta(days=1))
+    )
+    owner.add_pet(pet)
+
+    scheduler = Scheduler(owner)
+    scheduler.generate_daily_plan()
+
+    planned = [task.name for _start, _pet, task in scheduler.entries]
+    assert planned == ["Today"]              # future task excluded from the plan
+    assert len(scheduler.detect_conflicts()) == 1  # ...but still flagged as a conflict
