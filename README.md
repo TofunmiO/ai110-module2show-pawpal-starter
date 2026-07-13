@@ -22,6 +22,18 @@ Your final app should:
 - Display the plan clearly (and ideally explain the reasoning) 
 <!-- - Include tests for the most important scheduling behaviors -->
 
+## ✨ Features
+
+The scheduling logic lives in `pawpal_system.py`. These are the algorithms it implements:
+
+- **Priority sorting** (`Scheduler.sort_tasks`) — orders tasks by a three-level key: *required first*, then by priority number (1 = high), then by shortest duration as a tiebreaker. This is the order the planner uses to decide what gets placed first.
+- **Sorting by time** (`Scheduler.sort_by_time`) — arranges tasks in clock order by their `preferred_time` ("HH:MM"). Zero-padded time strings sort correctly as plain strings; tasks with no fixed time fall back to `"99:99"` so they land at the end.
+- **Time-budgeted daily plan with gap-filling** (`Scheduler.generate_daily_plan`) — anchors fixed-time tasks at their requested slot (earliest first), then slots flexible tasks into the earliest free gaps by importance. It respects the owner's minute budget, always places *required* tasks even if that goes over budget, skips completed and future-dated tasks, and returns the plan in chronological order.
+- **Conflict warnings** (`Scheduler.detect_conflicts`, `Scheduler.conflict_warning`) — treats each timed task as a half-open window `[start, start + duration)` and flags any overlap, whether same pet or different pets. Tasks that merely touch (one ends as the next starts) don't conflict, and malformed times are skipped rather than crashing. `conflict_warning()` returns a ready-to-display string (empty when there are no conflicts).
+- **Daily / weekly recurrence** (`Task.mark_complete`, `Task.next_occurrence`) — completing a recurring task automatically spawns a fresh, incomplete copy dated to its next occurrence (+1 day for daily, +7 days for weekly) and re-attaches it to the same pet. One-off tasks don't recur, and re-completing an already-done task never spawns a duplicate.
+- **Filtering** (`Owner.filter_tasks`) — narrows tasks by pet name and/or completion status; each filter is optional and the two compose.
+- **Plan explanation** (`Scheduler.explain`) — renders the finished plan as human-readable text: scheduled entries, skipped tasks, conflicts, and a plain-language summary of the reasoning.
+
 ## Getting started
 
 ### Setup
@@ -92,6 +104,8 @@ The tests in `tests/test_pawpal.py` cover the core scheduling behaviors:
 - **Daily plan** — fixed times are anchored and flexible tasks fill the gaps, the budget is respected (required tasks placed even when over budget, optional ones skipped), and completed/future-dated tasks are left out.
 - **Edge cases** — empty owners/pets and zero-minute budgets.
 
+- Note: Confidence level based on system reliability is 4/5.
+
 ## 📐 Smarter Scheduling
 
 Beyond the basic priority sort, PawPal+ implements four "smarter" scheduling
@@ -107,12 +121,42 @@ behaviors, all in `pawpal_system.py`:
 
 ## 📸 Demo Walkthrough
 
-Describe your app in numbered steps so a reader can follow along without watching a video:
+PawPal+ runs as a Streamlit app (`streamlit run app.py`). You set how much time you have today, add your pets, give each pet its care tasks, and let it build a plan. Tasks can be filtered by status (all/pending/done) and sorted by time or priority.
 
-1. <!-- Describe this step -->
-2. <!-- Describe this step -->
-3. <!-- Describe this step -->
-4. <!-- Describe this step -->
-5. <!-- Add more steps as needed -->
+A typical run:
 
-**Screenshot or video** *(optional)*: <!-- Insert a screenshot or link to a demo video here -->
+1. Add a pet, e.g. Biscuit the dog.
+2. Add a few tasks for Biscuit — a morning walk, meds, feeding.
+3. Sort or filter the task list to see what's still pending.
+4. Click Generate schedule to build today's plan.
+5. Read the plan, any conflict warnings, and the note explaining why it's ordered that way.
+
+Along the way the Scheduler sorts tasks by time and priority, warns about overlapping times, keeps required tasks even when time is tight, and creates tomorrow's copy of a daily task once you complete it today.
+
+Here's the same thing from the command line (`python main.py`):
+
+```
+Owner: Tofunmi — 90 min available
+Pets: Biscuit, Whiskers
+Total tasks: 5
+
+Tasks sorted by time (sort_by_time):
+       08:00 — Insulin shot for Biscuit
+       08:15 — Morning walk for Biscuit
+       08:15 — Play/enrichment for Whiskers
+       18:00 — Evening feed for Whiskers
+  (flexible) — Grooming for Biscuit
+
+Marked 'Grooming' complete → auto-created next daily occurrence due 2026-07-14.
+
+⚠ 1 time conflict(s) detected:
+  Morning walk (08:15, Biscuit) overlaps Play/enrichment (08:15, Whiskers)
+
+Daily plan for Tofunmi:
+  08:00 — Insulin shot for Biscuit (5 min) [priority 1]
+  08:15 — Morning walk for Biscuit (30 min) [priority 1]
+  08:15 — Play/enrichment for Whiskers (20 min) [priority 2]
+  18:00 — Evening feed for Whiskers (10 min) [priority 1]
+
+Scheduled 4 task(s) from a 90 min budget (fixed times anchored, flexible tasks filled in by priority). 25 min still free. Warning: 1 time conflict(s) to resolve: Morning walk/Play/enrichment.
+```

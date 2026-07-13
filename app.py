@@ -103,6 +103,15 @@ else:
     with col3:
         priority = st.selectbox("Priority", ["low", "medium", "high"], index=2)
 
+    col4, col5, col6 = st.columns(3)
+    with col4:
+        frequency = st.selectbox("Frequency", ["daily", "weekly", "once"])
+    with col5:
+        # Optional fixed start time; leave blank for a flexible task.
+        preferred_time = st.text_input("Preferred time (HH:MM, optional)", value="")
+    with col6:
+        is_required = st.checkbox("Required (never skipped)")
+
     if st.button("Add task"):
         # Pet.add_task stores the Task on the chosen pet (and sets its back-link).
         selected_pet.add_task(
@@ -110,21 +119,79 @@ else:
                 name=task_title,
                 duration=int(duration),
                 priority=PRIORITY_MAP[priority],
+                frequency=frequency,
+                preferred_time=preferred_time.strip() or None,
+                is_required=is_required,
             )
         )
 
     if selected_pet.tasks:
         st.write(f"Tasks for {selected_pet.name}:")
-        st.table(
-            [
-                {
-                    "title": t.name,
-                    "duration_minutes": t.duration,
-                    "priority": t.priority,
-                }
-                for t in selected_pet.tasks
-            ]
-        )
+        fcol, scol = st.columns(2)
+        with fcol:
+            # Owner.filter_tasks by completion status.
+            status = st.radio(
+                "Show", ["all", "pending", "done"], horizontal=True, key="task_status"
+            )
+        with scol:
+            # Pick which Scheduler sorter drives the table.
+            sort_mode = st.radio(
+                "Sort by", ["time", "priority"], horizontal=True, key="task_sort_mode"
+            )
+
+        scheduler = Scheduler(owner)
+        completed = {"all": None, "pending": False, "done": True}[status]
+        # Narrow to this pet + status via Owner.filter_tasks.
+        filtered = owner.filter_tasks(pet_name=selected_pet.name, completed=completed)
+
+        if sort_mode == "time":
+            # sort_by_time: fixed times first, flexible/timeless tasks last.
+            ordered_tasks = scheduler.sort_by_time(filtered)
+        else:
+            # sort_tasks: required -> priority -> duration; intersect with the
+            # filtered set to keep the status/pet narrowing.
+            keep = set(id(t) for t in filtered)
+            ordered_tasks = [t for t in scheduler.sort_tasks() if id(t) in keep]
+
+        if ordered_tasks:
+            st.table(
+                [
+                    {
+                        "title": t.name,
+                        "time": t.preferred_time or "flexible",
+                        "duration_minutes": t.duration,
+                        "priority": t.priority,
+                        "status": "done" if t.completed else "pending",
+                    }
+                    for t in ordered_tasks
+                ]
+            )
+            st.success(
+                f"Showing {len(ordered_tasks)} {status} task(s) for "
+                f"{selected_pet.name}, sorted by {sort_mode}."
+            )
+        else:
+            st.warning(f"No {status} tasks for {selected_pet.name}.")
+
+        # Mark a pending task complete -> triggers recurrence for daily/weekly.
+        pending = owner.filter_tasks(pet_name=selected_pet.name, completed=False)
+        if pending:
+            done_idx = st.selectbox(
+                "Mark a task complete",
+                range(len(pending)),
+                format_func=lambda i: pending[i].name,
+                key="complete_task",
+            )
+            if st.button("Mark complete"):
+                task = pending[done_idx]
+                upcoming = task.mark_complete()
+                if upcoming is not None:
+                    st.success(
+                        f"'{task.name}' completed — next occurrence created for "
+                        f"{upcoming.due_date} ({upcoming.frequency})."
+                    )
+                else:
+                    st.success(f"'{task.name}' completed (one-off, no repeat).")
     else:
         st.info(f"No tasks yet for {selected_pet.name}. Add one above.")
 
@@ -140,6 +207,16 @@ if st.button("Generate schedule"):
         scheduler = Scheduler(owner)
         scheduler.generate_daily_plan()
 
+        st.success(
+            f"Scheduled {len(scheduler.entries)} task(s) for {owner.name}."
+        )
+
+        # Surface any overlapping time slots via the Scheduler's crash-proof
+        # warning (returns "" when there are none).
+        warning = scheduler.conflict_warning()
+        if warning:
+            st.warning(warning)
+
         st.markdown("#### Daily plan")
         st.table(
             [
@@ -154,9 +231,15 @@ if st.button("Generate schedule"):
             ]
         )
         if scheduler.skipped:
-            st.caption(
+            st.warning(
                 "Skipped (no time): "
                 + ", ".join(t.name for t in scheduler.skipped)
             )
         st.markdown("**Why this plan**")
         st.write(scheduler.reasoning)
+
+        # Full text version straight from the Scheduler (plan + skipped +
+        # conflicts + reasoning), so the UI reuses explain() rather than
+        # re-deriving it.
+        with st.expander("Full explanation"):
+            st.text(scheduler.explain())

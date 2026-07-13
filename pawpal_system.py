@@ -288,16 +288,27 @@ class Scheduler:
 
     def explain(self) -> str:
         """Explain the plan by reading entries, skipped, and reasoning."""
-        if not self.entries and not self.skipped:
+        # Already-completed tasks aren't part of today's plan, but list them
+        # so the explanation reflects what's been done, not just what's left.
+        done = self.owner.filter_tasks(completed=True)
+        if not self.entries and not self.skipped and not done:
             return "No plan generated yet — call generate_daily_plan() first."
 
         lines = [f"Daily plan for {self.owner.name}:"]
-        for start, pet, task in self.entries:
-            who = pet.name if pet else "?"
-            lines.append(
-                f"  {start} — {task.name} for {who} "
-                f"({task.duration} min) [priority {task.priority}]"
-            )
+        if self.entries:
+            for start, pet, task in self.entries:
+                who = pet.name if pet else "?"
+                lines.append(
+                    f"  {start} — {task.name} for {who} "
+                    f"({task.duration} min) [priority {task.priority}]"
+                )
+        else:
+            lines.append("  (nothing left to schedule)")
+        if done:
+            lines.append("Already done:")
+            for task in done:
+                who = task.pet.name if task.pet else "?"
+                lines.append(f"  ✓ {task.name} for {who}")
         if self.skipped:
             lines.append("Skipped (not enough time):")
             for task in self.skipped:
@@ -311,8 +322,9 @@ class Scheduler:
                     f"  ! {a_task.name} ({a_task.preferred_time}, {a_who}) "
                     f"overlaps {b_task.name} ({b_task.preferred_time}, {b_who})"
                 )
-        lines.append("")
-        lines.append(self.reasoning)
+        if self.reasoning:
+            lines.append("")
+            lines.append(self.reasoning)
         return "\n".join(lines)
 
     # --- helpers -----------------------------------------------------------
